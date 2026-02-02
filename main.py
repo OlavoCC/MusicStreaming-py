@@ -4,6 +4,7 @@ from qasync import QEventLoop
 
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 from PySide6.QtUiTools import QUiLoader
+from PySide6.QtCore import QStringListModel
 from PySide6.QtCore import QFile
 
 import os
@@ -16,8 +17,11 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.current_track = None
         self.player_process = None
+        self.queue = []
+        self.is_playing = False
+        self.player_process = None
+
 
         loader = QUiLoader()
 
@@ -28,6 +32,8 @@ class MainWindow(QMainWindow):
         ui_file.open(QFile.ReadOnly)
 
         self.ui = loader.load(ui_file, self)
+        self.playlist_model = QStringListModel()
+        self.ui.LVplaylist.setModel(self.playlist_model)
         ui_file.close()
 
         self.ui.BtnContinue.clicked.connect(
@@ -48,22 +54,29 @@ class MainWindow(QMainWindow):
         self.ui.BtnSkip.clicked.connect(
             lambda: asyncio.create_task(self.on_skip_clicked())
         )
+        self.ui.LVplaylist.clicked.connect(
+            lambda index: asyncio.create_task(
+                self.on_playlist_clicked(index)
+            )
+        )   
+
 
         
     #############
     ##FUNCTIONS##
     #############
     async def on_play_clicked(self):
-        if not self.current_track:
+        if not self.queue:
             QMessageBox.warning(
                 self.ui,
                 "Warning",
-                "Nenhuma música carregada"
+                "Playlist vazia"
             )
             return
-        if self.player_process:
-            self.player_process.terminate()
-        self.player_process = play_audio(self.current_track["url"])
+
+        if not self.is_playing:
+            await self.play_next()
+
 
     async def on_pause_clicked(self):
         if self.player_process:
@@ -86,15 +99,76 @@ class MainWindow(QMainWindow):
             )
             return
         
-        self.current_track = await search_music(termo)
-        await QMessageBox.information(
+        await self.add_to_playlist(termo)
+        QMessageBox.information(
             self.ui,
             "Search Result",
             f"Music Result: {termo}"
         )
 
     async def on_skip_clicked(self):
-        pass
+        if not self.queue:
+            return
+
+        if self.player_process:
+            self.player_process.terminate()
+            self.player_process = None
+
+        self.queue.pop(0)
+        self.update_playlist_view()
+        await self.play_next()
+    
+    ####################
+    ##FUNC TO PLAYLIST##
+    #####################
+
+    async def add_to_playlist(self, termo):
+        track = await search_music(termo)
+
+        if not track:
+            return
+
+        self.queue.append(track)
+        self.update_playlist_view()
+        if not self.is_playing:
+            await self.play_next()
+
+    async def play_next(self):
+        if not self.queue:
+            self.is_playing = False
+            return
+
+        self.is_playing = True
+        track = self.queue[0]
+
+        self.player_process = play_audio(track["url"])
+
+        asyncio.create_task(self.wait_song_end())
+    
+    async def wait_song_end(self):
+        loop = asyncio.get_running_loop()
+
+        await loop.run_in_executor(
+            None,
+            self.player_process.wait
+        )
+
+    # Se foi parado manualmente (skip/pause)
+        if not self.player_process:
+            return
+
+        if self.queue:
+            self.queue.pop(0)
+            self.update_playlist_view()
+
+        await self.play_next()
+    def update_playlist_view(self):
+        titles = [track["title"] for track in self.queue]
+        self.playlist_model.setStringList(titles)
+
+    #######
+    ##END##
+    #######
 
 app = QApplication(sys.argv)
 
