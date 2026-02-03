@@ -3,6 +3,7 @@ from pypresence import Presence
 import time
 import dotenv
 import os
+dotenv.load_dotenv()
 CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
 
 class DiscordRPC:

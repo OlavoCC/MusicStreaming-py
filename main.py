@@ -16,7 +16,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.player_process = None
+        self.player_processes = None
         self.current_track_index = -1
         self.queue = []
         self.is_playing = False
@@ -55,11 +55,15 @@ class MainWindow(QMainWindow):
         if not self.is_playing:
             await self.play_next()
 
+    # on_pause_clicked, on_skip_clicked:
     @qasync.asyncSlot()
     async def on_pause_clicked(self):
-        if self.player_process:
-            self.player_process.terminate()
-            self.player_process = None
+        if self.player_processes:  # ← player_processes
+            ffmpeg, ytdlp = self.player_processes
+            ffmpeg.terminate()
+            ytdlp.terminate()
+            self.player_processes = None
+    
         if self.queue:
             await self.rpc.update_paused(self.queue[0])
 
@@ -85,18 +89,20 @@ class MainWindow(QMainWindow):
         if not self.queue:
             return
     
-    # ✅ CANCELA task anterior IMEDIATAMENTE
+    # ✅ CANCELA task E MATA PROCESSOS
         if self.wait_task and not self.wait_task.done():
             self.wait_task.cancel()
             self.wait_task = None
     
-        if self.player_process:
-            self.player_process.terminate()
-            self.player_process = None
+        if self.player_processes:  # ← player_processes (NOVO)
+            ffmpeg, ytdlp = self.player_processes
+            ffmpeg.terminate()
+            ytdlp.terminate()
+            self.player_processes = None
     
         self.queue.pop(0)
         self.update_playlist_view()
-        await self.play_next()  # ← NOVA música, Discord atualiza!
+        await self.play_next()
     
     @qasync.asyncSlot()
     async def on_playlist_clicked(self, index):
@@ -115,6 +121,7 @@ class MainWindow(QMainWindow):
         if not self.is_playing:
             await self.play_next()
 
+    # play_next:
     async def play_next(self):
         if not self.queue:
             self.is_playing = False
@@ -123,32 +130,36 @@ class MainWindow(QMainWindow):
 
         self.is_playing = True
     
-    # ✅ CANCELA task anterior se existir
+    # Cancela task anterior
         if self.wait_task and not self.wait_task.done():
             self.wait_task.cancel()
     
         track = self.queue[0]
-        self.player_process = play_audio(track["url"])
+        self.player_processes = play_audio(track["url"])  # ← Retorna (ffmpeg, ytdlp)
         self.current_track_index = 0
-
-        self.wait_task = asyncio.create_task(self.wait_song_end())  # ← SALVA REFERÊNCIA
+    
+        self.wait_task = asyncio.create_task(self.wait_song_end())
         await self.rpc.update_playing(track)
 
 
     async def wait_song_end(self):
+        if not self.player_processes:
+            return
+        
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self.player_process.wait)
-
-        # ✅ VERIFICA se ainda é a MESMA música (não foi skipada)
-        if not self.player_process or self.current_track_index != 0:
+        ffmpeg, ytdlp = self.player_processes
+    
+        await loop.run_in_executor(None, ffmpeg.wait)
+    
+        if self.current_track_index != 0:
             return
 
-        # Remove música ATUAL (índice 0 mudou)
         if self.queue:
             self.queue.pop(0)
             self.update_playlist_view()
         
-        self.current_track_index = -1  # reset
+        self.player_processes = None
+        self.current_track_index = -1
         await self.play_next()
 
     # ✅ FUNÇÃO QUE FALTAVA!

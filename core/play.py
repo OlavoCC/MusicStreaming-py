@@ -1,21 +1,36 @@
 import subprocess
-
-from core.search import search_music
-
-ffmpeg_opts = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options": "-vn"
-}
+import signal
+import os
 
 def play_audio(audio_url):
-    ytdlp = subprocess.Popen([
-        'yt-dlp', '-f', 'bestaudio[ext=m4a]', '--no-playlist', '-o', '-', audio_url
-    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ytdlp_cmd = [
+        'yt-dlp', 
+        '-f', 'bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio',
+        '--no-playlist', '-o', '-', '--quiet', '--no-warnings',
+        audio_url
+    ]
     
-    ffmpeg = subprocess.Popen([
-        'ffmpeg', '-i', 'pipe:0', '-f', 'pulse', 'default'
-    ], stdin=ytdlp.stdout)
+    ffmpeg_cmd = [
+        'ffmpeg', '-loglevel', 'error', '-threads', '2',
+        '-i', 'pipe:0', '-f', 'pulse', 'default',
+        '-ar', '44100', '-ac', '2'
+    ]
+    
+    # ✅ SEM start_new_session=True (causador do problema)
+    ytdlp = subprocess.Popen(
+        ytdlp_cmd, 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.DEVNULL,
+        bufsize=16384
+    )
+    
+    ffmpeg = subprocess.Popen(
+        ffmpeg_cmd,
+        stdin=ytdlp.stdout,
+        stderr=subprocess.DEVNULL
+    )
     
     ytdlp.stdout.close()
-    return ffmpeg
     
+    # ✅ RETORNA OS DOIS PROCESSOS (pra matar tudo)
+    return (ffmpeg, ytdlp)
