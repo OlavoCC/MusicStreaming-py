@@ -1,8 +1,9 @@
 import asyncio
 from pypresence import Presence
 import time
-
-CLIENT_ID = "1468032174564577404"
+import dotenv
+import os
+CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
 
 class DiscordRPC:
     def __init__(self):
