@@ -38,8 +38,10 @@ async def search_music(termo):
 
     return {
         "title": info.get("title"),
-        "url": info.get("url"),
-        "duration": info.get("duration"),
+        "artist": info.get("uploader") or info.get("channel"),
+        "url": info.get("webpage_url"),
+        "duration": info.get("duration"),  # segundos
+        "thumbnail": info.get("thumbnail"),
     }
 
 

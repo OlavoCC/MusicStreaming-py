@@ -8,14 +8,14 @@ ffmpeg_opts = {
 }
 
 def play_audio(audio_url):
-    return subprocess.Popen([
-        "ffmpeg",
-        "-reconnect", "1",
-        "-reconnect_streamed", "1",
-        "-reconnect_delay_max", "5",
-        "-i", audio_url,
-        "-vn",
-        "-f", "pulse",  # funciona na maioria dos Linux
-        "default"
-    ])
+    ytdlp = subprocess.Popen([
+        'yt-dlp', '-f', 'bestaudio[ext=m4a]', '--no-playlist', '-o', '-', audio_url
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    
+    ffmpeg = subprocess.Popen([
+        'ffmpeg', '-i', 'pipe:0', '-f', 'pulse', 'default'
+    ], stdin=ytdlp.stdout)
+    
+    ytdlp.stdout.close()
+    return ffmpeg
     
